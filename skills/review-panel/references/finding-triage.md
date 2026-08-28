@@ -1,0 +1,100 @@
+# Finding Triage
+
+The schema every reviewer returns, how duplicates collapse, and how findings become dispositions.
+
+## Finding schema
+
+Fixed shape so deduplication is mechanical rather than interpretive.
+
+```yaml
+- id: sec-01                    # <agent-prefix>-<n>; unique within that agent
+  agent: security               # security | ghost-tests | clean-code | correctness
+  severity: blocking            # blocking | should-fix | consider | nit
+  file: src/main/java/com/solovis/order/OrderController.java
+  line: 142                     # best available; approximate is fine
+  in_scope: true                # is `line` inside a changed-lines.txt range?
+  title: Tenant ID read from header without authorization check
+  detail: >
+    What is wrong and what goes wrong because of it. For security findings,
+    the concrete attack path. For ghost tests, the reason the test cannot fail.
+  fix: >
+    A specific change, not a principle.
+  confidence: high              # high | medium | low
+  evidence: >
+    What in the packet supports this. Cite paths and line numbers. If the
+    conclusion depends on something not in the packet, say what and set
+    confidence to low.
+```
+
+`in_scope` is the reviewer's assessment; the orchestrator recomputes it against `changed-lines.txt` and the recomputed value wins. Reviewers see the map but the orchestrator owns the boundary.
+
+## Severity definitions
+
+Consistent across all four reviewers, so a "blocking" from one means the same as from another.
+
+- **Blocking** — data loss, corruption, a security breach, an outage, or an acceptance criterion that is not actually met or not actually tested. The PR should not open.
+- **Should fix** — a real bug or real risk, bounded. Missing edge case, swallowed exception, N+1 query, a new branch with no test.
+- **Consider** — design and maintainability. Reasonable people could ship without it.
+- **Nit** — style and naming. Optional by definition.
+
+## Deduplication
+
+Two findings are the same when they share a file, an approximate line (within about five lines, to absorb differing anchors), and an issue class. **Wording is never the key** — four reviewers will describe one problem four different ways.
+
+When collapsing:
+
+- Keep the **highest** severity claimed by any reviewer. If security calls it blocking and clean-code calls it a nit, it is blocking; the reviewer with the narrower remit usually sees the sharper edge.
+- Keep the **clearest** detail and fix, from whichever reviewer wrote them best.
+- Record `corroboration: N` — how many reviewers independently raised it.
+- Keep the **lowest** confidence, and note the spread. Disagreement about certainty is information.
+
+**Report corroboration in the batch.** Three independent reviewers on a should-fix often warrants more attention than one reviewer's blocking call. The human should be able to see which is which.
+
+**Surface genuine disagreement rather than resolving it.** If one reviewer calls something a bug and another explicitly calls it intentional, that ambiguity in the code is itself worth knowing about. Present both positions.
+
+## The triage matrix
+
+Scope comes from `changed-lines.txt`. In scope means this story touched those lines. Out of scope means the code was already there.
+
+| Severity | In scope | Out of scope |
+|---|---|---|
+| **Blocking** | New feature. Must be done before the PR. | Ticket, flagged as urgent. Not this story's work, but someone needs it now. |
+| **Should fix** | New feature. | Ticket. |
+| **Consider** | Note in the PR description. No feature. | Drop, or ticket if cheap and clearly worth it. |
+| **Nit** | Fix inline now, or drop. No feature. | Drop. |
+
+### Security carve-out
+
+A blocking security finding is escalated immediately regardless of scope or round. Classify it out-of-scope for the PR if that is accurate — but say plainly that it needs attention today. The scope boundary governs what belongs in this ticket, not whether a discovered vulnerability gets mentioned.
+
+### Acceptance-criteria carve-out
+
+An unmet or untested acceptance criterion is always in scope and always blocking, even if the relevant line is outside the changed ranges. The criterion is the story's definition of done.
+
+## Round rules
+
+| Round | Panel scope | May spawn features |
+|---|---|---|
+| 1 | Full story diff | Any severity, per the matrix |
+| 2 | Remediation diff only | **Blocking only.** Everything else becomes a ticket or a drop. |
+| 3 | Forbidden | — |
+
+Round 3 means two remediation cycles failed to converge. That is a signal about the plan or the requirements, not something another cycle fixes. Stop, write up everything outstanding, and hand it to a human.
+
+Every generated feature file carries:
+
+```yaml
+generated_by: review-panel
+round: 2
+source_finding: sec-01
+parent_feature: "03"
+```
+
+This makes the provenance chain readable. If you are looking at a feature whose parent was itself generated by the panel, you are in a loop and should say so.
+
+## Common triage mistakes
+
+- **Letting out-of-scope work into the story.** The most common one. A reviewer finds something genuinely bad in code the story merely touched, it feels wrong to leave it, and the PR doubles in size. Ticket it. That is not neglect; it is keeping the change reviewable.
+- **Treating corroboration as severity.** Four reviewers agreeing on a nit is still a nit.
+- **Losing low-confidence findings entirely.** Record them at their disposition. A low-confidence security finding that later proves real should be traceable to the round where someone first suspected it.
+- **Auto-filing without the human.** The batch gate is the point. An orchestrator that files features on its own has removed the only judgment step in the loop.

@@ -1,0 +1,19 @@
+# Harness runtime state — local only, never shared
+.harness/
+
+# Outputs produced by the skills
+ARCHITECTURE_BRIEF.md
+*.skill
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Build output, if a test project ever lands here
+target/
+build/
+node_modules/
