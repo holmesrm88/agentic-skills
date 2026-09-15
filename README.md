@@ -1,6 +1,6 @@
 # Agentic Engineering Skills
 
-A set of Claude Skills for Java development work: orienting to unfamiliar code, reviewing it, and running a disciplined implementation loop from a ticket through to a reviewed, committed change.
+A set of Claude Skills for Java development work: estimating and orienting to unfamiliar code, reviewing it, and running a disciplined implementation loop from a ticket through to a reviewed, deployed-and-verified, committed change.
 
 Each skill is a folder containing a `SKILL.md` (the instructions), optional `references/` (detail loaded on demand), and optional `scripts/` (deterministic work that shouldn't be re-derived every run). Nothing needs installing beyond copying the folders into place.
 
@@ -8,11 +8,22 @@ Each skill is a folder containing a `SKILL.md` (the instructions), optional `ref
 
 | Skill | Use it when | Key output |
 |---|---|---|
+| [`story-estimator`](skills/story-estimator) | Prepping a backlog for grooming | Calibrated points, questions, ticket comments |
 | [`repo-recon`](skills/repo-recon) | Orienting to code you didn't write | `ARCHITECTURE_BRIEF.md` |
 | [`java-code-review`](skills/java-code-review) | Reviewing a diff, class, or PR | Severity-ranked findings |
 | [`bmad-intake`](skills/bmad-intake) | Starting a unit of work, before deciding how | A route: build, recon, plan, or escalate |
 | [`harness`](skills/harness) | Implementing a story, feature by feature | Commits, gated by tests |
 | [`review-panel`](skills/review-panel) | A story is done and heading for a PR | Triaged findings, some as new work |
+| [`gh-actions-triage`](skills/gh-actions-triage) | A GitHub Actions run fails | Classified cause, proposed fix |
+| [`dev-env-verify`](skills/dev-env-verify) | A PR's build is green, before marking it ready for review | Pass/fail per acceptance criterion, with evidence |
+
+### story-estimator
+
+Estimates story points for unpointed Jira stories ahead of grooming, calibrated against how the team's past work actually went rather than against generic heuristics.
+
+Two hard rules. **Never model individuals** — `analyze_history.py` strips assignee, reporter, and every other person field before any analysis runs; this is an estimation aid, not a throughput-surveillance tool. **Refuse rather than guess** — if the calibration history is too thin or too corrupted, it says so and stops instead of producing a confident number nobody should trust.
+
+Runs in two phases: calibrate first, alone, until the team trusts what it says about their own past work — often a finding like "your 3s carry over 89% of the time and take a median of 7.5 days" — then estimate by reference class against real completed stories, not a fitted formula. Clarifying questions are posted before the number, never to the story-points field itself, because a populated field reads as a decision that's already been made.
 
 ### repo-recon
 
@@ -72,9 +83,19 @@ it" is how real failures ship.
 Token-conscious by design: `gh run view --log-failed` pulls only failed steps, the
 full log is saved to disk for grepping rather than read into context.
 
+### dev-env-verify
+
+Confirms a deployed change does what the story asked, in the ephemeral environment its PR spun up, before a human reviewer spends time on it. Local tests passing means the code does what its tests say; this asks whether the deployed thing does what the *story* said — those come apart more often than they should.
+
+**Never handles credentials.** The person logs into the environment themselves; the skill drives the session already established in the browser. If a login wall appears mid-run, it stops and hands back rather than attempting to authenticate around it.
+
+Writes the check list from the acceptance criteria *before* opening the browser — exploring first and judging afterward produces confirmation bias. Each check reports pass, fail, or **blocked**, and blocked is not pass: a check that couldn't run because of a login wall or missing data is unverified, not green. Capped at three verification rounds before it stops and brings in a person.
+
 ## How they compose
 
 ```
+                  story-estimator  ──► calibrated points  ──► grooming
+                                                     │
                     new intent ──► [planning] ──► stories
                                                      │
 existing ticket ─────────────────────────────────────┤
@@ -91,10 +112,16 @@ existing ticket ─────────────────────�
                                                      ▼      │
                                               verify A.C.   │ new features
                                                      ▼      │ loop back ───┘
-                                                 open PR      (max 2 rounds)
+                                                   push        (max 2 rounds)
+                                                     │
+                                       CI fails ◄────┴────► CI green
+                                            │                    │
+                                  gh-actions-triage       dev-env-verify
+                                            │                    │
+                                      fix, push, rerun     ready for review
 ```
 
-`java-code-review` is used standalone and also serves as the correctness reviewer inside `review-panel`. `repo-recon` feeds brownfield context into planning and into `harness init`.
+`java-code-review` is used standalone and also serves as the correctness reviewer inside `review-panel`. `repo-recon` feeds brownfield context into planning and into `harness init`. `story-estimator` runs upstream of all of it, ahead of grooming; `gh-actions-triage` and `dev-env-verify` are the two gates a pushed change passes through before a human reviews it.
 
 ## Install
 
@@ -119,7 +146,7 @@ chmod +x ~/.claude/skills/*/scripts/*.sh
 
 ## Design principles
 
-These are consistent across all five and worth preserving in anything added later.
+These are consistent across all eight and worth preserving in anything added later.
 
 **Don't guess.** Discover the environment at runtime rather than reciting remembered syntax. `detect_bmad.sh` enumerates installed commands instead of assuming them; `repo_stats.sh` reports UNKNOWN rather than inferring. A confidently wrong answer is worse than an admitted gap, because it can't be spotted.
 
