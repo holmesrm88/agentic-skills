@@ -17,3 +17,4 @@ Thumbs.db
 target/
 build/
 node_modules/
+.estimator/
