@@ -58,6 +58,20 @@ Isolation is the design. Independent agreement between reviewers is evidence; ag
 
 Approved findings become new harness features, tickets, or inline fixes. Round cap of two, because the loop doesn't naturally terminate.
 
+### gh-actions-triage
+
+Diagnoses a failed GitHub Actions run: fetches only the failed steps, extracts the
+error from the noise, classifies it, and proposes a fix.
+
+Classification comes before diagnosis. Five categories — base-branch breakage, real
+failure, flake, config drift, infrastructure — checked in that order, because
+debugging your own diff against an already-red pipeline is the most expensive
+mistake available. A flake classification requires positive evidence; "just re-run
+it" is how real failures ship.
+
+Token-conscious by design: `gh run view --log-failed` pulls only failed steps, the
+full log is saved to disk for grepping rather than read into context.
+
 ## How they compose
 
 ```
